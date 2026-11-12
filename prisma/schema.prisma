@@ -1,0 +1,195 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+model User {
+  id String @id
+  name String
+  email String @unique
+  emailVerified Boolean @default(false)
+  image String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  accounts Account[]
+  sessions Session[]
+  twoFactorEnabled Boolean @default(false)
+  memberships OrganizationMember[]
+  activities ActivityLog[]
+  oauthAttempts SocialOAuthAttempt[]
+  twoFactor TwoFactor?
+}
+model TwoFactor {
+  id String @id
+  secret String
+  backupCodes String
+  userId String @unique
+  verified Boolean @default(false)
+  failedVerificationCount Int @default(0)
+  lockedUntil DateTime?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([secret])
+}
+model Account {
+  id String @id
+  accountId String
+  providerId String
+  userId String
+  accessToken String?
+  refreshToken String?
+  idToken String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope String?
+  password String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+model Session {
+  id String @id
+  token String @unique
+  userId String
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  oauthAttempts SocialOAuthAttempt[]
+  @@index([userId])
+}
+model Verification {
+  id String @id
+  identifier String
+  value String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([identifier])
+}
+model Organization {
+  id String @id @default(cuid())
+  name String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members OrganizationMember[]
+  brands Brand[]
+  activities ActivityLog[]
+  socialConnections SocialConnection[]
+  oauthAttempts SocialOAuthAttempt[]
+}
+model OrganizationMember {
+  id String @id @default(cuid())
+  organizationId String
+  userId String
+  role Role @default(VIEWER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+model Brand {
+  id String @id @default(cuid())
+  organizationId String
+  name String
+  description String @default("")
+  color String @default("#3689ff")
+  secondaryColor String @default("#00d4ed")
+  website String @default("")
+  audience String @default("")
+  tone String @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@index([organizationId, createdAt])
+}
+model ActivityLog {
+  id String @id @default(cuid())
+  organizationId String
+  userId String?
+  action String
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([organizationId, createdAt])
+}
+
+// Only verified provider accounts belong here. UI simulations are never persisted.
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+  YOUTUBE
+  LINKEDIN
+  X
+  THREADS
+}
+enum SocialConnectionState {
+  NOT_CONNECTED
+  CONNECTING
+  CONNECTED
+  NEEDS_ATTENTION
+  LIMITED_ACCESS
+  UNSUPPORTED
+}
+enum SocialRevocationState {
+  NONE
+  REVOKED
+  MANUAL_REQUIRED
+}
+model SocialConnection {
+  id String @id @default(cuid())
+  organizationId String
+  platform SocialPlatform
+  providerAccountId String
+  accountName String
+  state SocialConnectionState @default(NOT_CONNECTED)
+  grantedScopes String[] @default([])
+  grantedCapabilities String[] @default([])
+  // AES-256-GCM envelope: access and refresh tokens never appear in UI DTOs.
+  encryptedTokens String?
+  tokenExpiresAt DateTime?
+  connectedAt DateTime?
+  disconnectedAt DateTime?
+  revocationState SocialRevocationState @default(NONE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  attempts SocialOAuthAttempt[]
+  @@unique([organizationId, platform, providerAccountId])
+  @@index([organizationId, platform, state])
+}
+model SocialOAuthAttempt {
+  id String @id @default(cuid())
+  stateHash String @unique
+  organizationId String
+  userId String
+  sessionId String
+  connectionId String?
+  platform SocialPlatform
+  returnTo String
+  requestedCapabilities String[]
+  requestedScopes String[]
+  encryptedVerifier String
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  connection SocialConnection? @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  @@index([organizationId, userId])
+  @@index([expiresAt])
+}
